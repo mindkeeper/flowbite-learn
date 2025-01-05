@@ -1,15 +1,22 @@
 'use client';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, FloatingLabel, Label, Radio, Select } from 'flowbite-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useDebouncedCallback } from 'use-debounce';
 import { z } from 'zod';
+import CustomSelect from './ui/select';
+import { useGetInfinitUser } from '@/hooks/use-get-user';
+// import dynamic from 'next/dynamic';
+
+// const CustomSelect = dynamic(() => import('./ui/select'), { ssr: false });
 
 const FormSchema = z.object({
   firstName: z.string().min(1, { message: 'First name is required' }),
   lastName: z.string().min(1, { message: 'Last name is required' }),
   status: z.enum(['single', 'married', 'divorced'], { message: 'Please select a marital status' }),
   gender: z.enum(['male', 'female'], { message: 'Please select a gender' }),
+  userId: z.string().min(1, { message: 'Please select a user' }),
 });
 
 type TFormSchema = z.infer<typeof FormSchema>;
@@ -19,6 +26,8 @@ export const FormTest = () => {
     register,
     handleSubmit,
     formState: { errors },
+    control,
+    watch,
   } = useForm<TFormSchema>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
@@ -26,13 +35,40 @@ export const FormTest = () => {
       lastName: '',
       status: undefined,
       gender: undefined,
+      userId: '',
     },
     mode: 'onBlur',
   });
 
-  const onSubmit = (data: TFormSchema) => {
-    console.log(data);
-  };
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  const { data, isFetching, isFetchingNextPage, hasNextPage, fetchNextPage } = useGetInfinitUser({ search: searchTerm });
+
+  const userList = useMemo(() => {
+    return (
+      data?.pages.flatMap((page) =>
+        page.users.map((user) => ({
+          value: user.id.toString(),
+          label: `${user.firstName} ${user.lastName}`,
+        }))
+      ) ?? []
+    );
+  }, [data?.pages]);
+
+  const isLoading = useMemo(() => isFetching || isFetchingNextPage, [isFetching, isFetchingNextPage]);
+  const fetchMoreData = useCallback(() => {
+    if (hasNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, fetchNextPage]);
+
+  const debouncedSearch = useDebouncedCallback(
+    (value: string) => {
+      setSearchTerm(value);
+    },
+    1000,
+    { maxWait: 2000 }
+  );
   const selectOptions = useMemo(
     () => [
       {
@@ -51,7 +87,11 @@ export const FormTest = () => {
     []
   );
 
-  console.log(errors);
+  const onSubmit = (data: TFormSchema) => {
+    console.log(data);
+  };
+  console.log(watch('userId'));
+
   return (
     <div className='max-w-3xl w-full bg-neutral-100 text-slate-800 flex flex-col rounded-lg'>
       <div className='flex flex-col gap-y-2 p-4'>
@@ -108,6 +148,18 @@ export const FormTest = () => {
             </div>
             {errors.gender && <p className='text-red-500 text-sm mt-1.5'>{errors.gender.message}</p>}
           </fieldset>
+
+          <CustomSelect
+            name='userId'
+            control={control}
+            options={userList}
+            fetchMoreData={fetchMoreData}
+            setSearch={debouncedSearch}
+            placeholder='Select a user'
+            isLoading={isLoading}
+            error={!!errors?.userId}
+            errorMessage={errors?.userId?.message}
+          />
 
           <Button color='dark' className='self-center w-full' type='submit'>
             Submit
